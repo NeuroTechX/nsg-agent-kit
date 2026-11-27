@@ -27,6 +27,7 @@ import json
 import os
 import shutil
 import subprocess
+import sys
 import tarfile
 import time
 import zipfile
@@ -137,6 +138,11 @@ def _zip_with_token(zpath, sid, token):
     return out
 
 
+class NsgUnreachable(SystemExit):
+    """nsgr.sh exit 75: the API cannot be trusted or reached (expired certificate, 2026-11-20).
+    Nothing about our jobs is known, so callers must not count it as a failed fetch."""
+
+
 def _nsgr(args, extra=""):
     """nsgr.sh needs NSG_URL/USER/APPKEY/PASSWORD in the env (source nsgr/config.env; read -s
     NSG_PASSWORD). NSG_EXTRA is overridden per call so a stale one in config.env can't point a
@@ -146,6 +152,9 @@ def _nsgr(args, extra=""):
             raise SystemExit(f"{k} not set: `set -a; source nsgr/config.env; read -s NSG_PASSWORD; set +a`")
     env = dict(os.environ, NSG_EXTRA=extra)
     r = subprocess.run([NSGR, *args], env=env, capture_output=True, text=True)
+    if r.returncode == 75:
+        print(f"NSG-R unreachable: {r.stderr.strip()[-500:]}", file=sys.stderr)
+        raise NsgUnreachable(75)
     if r.returncode != 0:
         raise SystemExit(f"nsgr.sh {' '.join(args)} failed:\n{r.stderr[-2000:]}")
     return r.stdout
@@ -238,6 +247,9 @@ def poll(a):
                 shutil.rmtree(dest)
             try:
                 _nsgr(["fetch", j["handle"], dest])
+            except NsgUnreachable:
+                json.dump(jobs, open(jobs_path, "w"), indent=2)
+                raise
             except SystemExit as e:
                 # One bad fetch must not abort the pass: before this, a terminal job whose output
                 # listing was empty (public1 chbmit_bendr, 2026-10-27) raised here, jobs.json was

@@ -16,7 +16,30 @@
 #   ./nsgr.sh whoami            # account status + canSubmit (no budget API exists)
 #   ./nsgr.sh status <JOBHANDLE>
 #   ./nsgr.sh fetch  <JOBHANDLE> <dest_dir>
+#   ./nsgr.sh tlscheck [warn_days]   # server certificate expiry; needs only NSG_URL, no credentials
+#
+# Every call verifies the server certificate. If it has expired (nsgr.sdsc.edu, 2026-11-20) curl
+# exits 60 and this script exits 75 (EX_TEMPFAIL): wait for SDSC to renew it. Never add -k -- every
+# request carries your password and app key.
 set -euo pipefail
+
+if [ "${1:-}" = tlscheck ]; then
+  : "${NSG_URL:?set NSG_URL (source nsgr/config.env)}"
+  hostport="$(printf '%s' "$NSG_URL" | sed -E 's#^https://([^/]+).*#\1#')"
+  case "$hostport" in *:*) ;; *) hostport="$hostport:443" ;; esac
+  warn_days="${2:-14}"
+  end="$(echo | timeout 20 openssl s_client -connect "$hostport" -servername "${hostport%%:*}" 2>/dev/null \
+         | openssl x509 -noout -enddate 2>/dev/null | cut -d= -f2)" || true
+  [ -n "$end" ] || { echo "tlscheck: no certificate from $hostport (host down?)" >&2; exit 75; }
+  left=$(( ( $(date -d "$end" +%s) - $(date +%s) ) / 86400 ))
+  echo "$hostport certificate notAfter=$end ($left days left)"
+  if [ "$left" -lt 0 ]; then
+    echo "tlscheck: EXPIRED -- every API call will fail (curl 60). Tell nsghelp@sdsc.edu; do not use -k." >&2
+    exit 75
+  fi
+  [ "$left" -lt "$warn_days" ] && echo "tlscheck: WARNING expires in $left days" >&2
+  exit 0
+fi
 
 : "${NSG_URL:?set NSG_URL (source nsgr/config.env)}"
 : "${NSG_USER:?set NSG_USER}"
@@ -24,6 +47,15 @@ set -euo pipefail
 : "${NSG_PASSWORD:?export NSG_PASSWORD in your shell (do not store it on disk)}"
 
 auth=(-u "${NSG_USER}:${NSG_PASSWORD}" -H "cipres-appkey:${NSG_APPKEY}")
+
+curl() {  # certificate failures (60 expired/untrusted, 51 name mismatch) are server-side: exit 75
+  local rc=0; command curl "$@" || rc=$?
+  if [ "$rc" -eq 60 ] || [ "$rc" -eq 51 ]; then
+    echo "nsgr.sh: TLS verification of ${NSG_URL} failed (curl $rc) -- run './nsgr.sh tlscheck'" >&2
+    exit 75
+  fi
+  return "$rc"
+}
 base="${NSG_URL}/job/${NSG_USER}"
 
 cmd="${1:-help}"; shift || true

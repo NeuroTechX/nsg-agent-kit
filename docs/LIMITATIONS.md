@@ -123,6 +123,19 @@ full workspace disk is a recurring NSG condition. `oeb_plan.py submit --redo-los
 NSG's own queue can also hold a job in `SUBMITTING` for many hours (one `chbmit` shard: 20 h) before
 Slurm sees it; nothing on our side changes that.
 
+**Expired API certificate (2026-11-20 → at least 2026-11-26).** The TLS certificate of
+`nsgr.sdsc.edu:8443` (InCommon RSA Server CA 2, valid 2025-11-20 → 2026-11-20 23:59:59 GMT) was not
+renewed, so every REST call fails verification: `curl: (60) ... certificate has expired`. The web
+portal (`www.nsgportal.org`, a different certificate) is unaffected, and jobs already queued keep
+running server-side; only submitting, polling and fetching stop. What to do:
+
+- `nsgr/nsgr.sh tlscheck` prints the expiry and days left (no credentials needed); it exits 75 when
+  expired and warns under 14 days. Run it before a long sweep.
+- `nsgr.sh` maps curl 60/51 to exit **75** and `oeb_plan.py` raises on it without touching the
+  fetch-error counter, so an expired certificate never turns a running shard into a "lost" one.
+- **Do not work around it with `curl -k`.** Every request carries your NSG password and app key;
+  with verification off nothing proves you are talking to SDSC. Mail nsghelp@sdsc.edu and wait.
+
 ## 6. Data constraints
 
 - **[measured]** NEMAR/OpenNeuro data at `$NEMARPATH` is **read-only** (552 datasets as of 2026-09-22, git-annex). Your
