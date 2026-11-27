@@ -8,6 +8,10 @@ allocation, no SSH. You upload a zip of your code, pick a software environment, 
 hands back the output. Through **NEMAR**, 552 OpenNeuro EEG/MEG/iEEG datasets already sit on Expanse's
 disk, free to read from your job.
 
+**Start with a real GPU workload.** The [Braindecode GPU lab](lessons/braindecode-gpu/README.md)
+walks through one NSG portal job comparing a frozen EEG foundation model with LoRA on public motor
+imagery data. Use the included reference results to compare accuracy, runtime, and GPU memory.
+
 ---
 
 # Get access (≈10 minutes)
